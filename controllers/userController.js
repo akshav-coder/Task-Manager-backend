@@ -10,23 +10,44 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const registerUser = async (req, res) => {
   const { name, email, password } = req.body;
 
+  // Check if the user already exists
   const userExists = await User.findOne({ email });
 
   if (userExists) {
-    return res.status(400).json({ message: "User already exists" });
+    return res.status(400).json({
+      message: "User registration failed",
+      status_code: 400,
+      error: true,
+      data: {
+        email: "User with this email already exists",
+      },
+    });
   }
 
-  const user = await User.create({ name, email, password });
+  // Proceed with user registration
+  try {
+    const user = await User.create({ name, email, password });
 
-  if (user) {
-    res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      token: generateToken(user._id),
+    if (user) {
+      return res.status(201).json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        token: generateToken(user._id),
+      });
+    } else {
+      return res.status(400).json({
+        message: "User could not be created",
+        status_code: 400,
+        error: true,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+      status_code: 500,
+      error: true,
     });
-  } else {
-    res.status(400).json({ message: "Invalid user data" });
   }
 };
 
@@ -45,8 +66,30 @@ const loginUser = async (req, res) => {
       email: user.email,
       token: generateToken(user._id),
     });
-  } else {
-    res.status(401).json({ message: "Invalid email or password" });
+  }
+
+  // If the email is not found
+  if (!user) {
+    return res.status(401).json({
+      message: "Invalid email or password",
+      status_code: 401,
+      error: true,
+      data: {
+        email: "Email not found", // Only return this when email doesn't exist
+      },
+    });
+  }
+
+  // If user exists, check password
+  if (user && !(await user.matchPassword(password))) {
+    return res.status(401).json({
+      message: "Invalid email or password",
+      status_code: 401,
+      error: true,
+      data: {
+        password: "Incorrect password", // Return only if password is incorrect
+      },
+    });
   }
 };
 
@@ -55,6 +98,18 @@ const loginUser = async (req, res) => {
 // @access Public
 const googleAuthUser = async (req, res) => {
   const { token } = req.body;
+
+  // Check if token is provided
+  if (!token) {
+    return res.status(422).json({
+      message: "Form validation fails",
+      status_code: 422,
+      error: true,
+      data: {
+        token: "Google token is required",
+      },
+    });
+  }
 
   try {
     // Verify the Google token
@@ -70,11 +125,13 @@ const googleAuthUser = async (req, res) => {
 
     if (user) {
       // If user exists, return the user with token (login)
-      res.json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        token: generateToken(user._id),
+      return res.status(400).json({
+        message: "User registration failed",
+        status_code: 400,
+        error: true,
+        data: {
+          email: "User with this email already exists",
+        },
       });
     } else {
       // If user does not exist, create a new user (register)
@@ -85,7 +142,7 @@ const googleAuthUser = async (req, res) => {
         isGoogleAuth: true, // Flag for Google OAuth user
       });
 
-      res.status(201).json({
+      return res.status(201).json({
         _id: user._id,
         name: user.name,
         email: user.email,
@@ -93,8 +150,21 @@ const googleAuthUser = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error("Google sign-in error:", error);
-    res.status(401).json({ message: "Invalid Google token" });
+    // Check if the error is due to token verification failure
+    if (error.message.includes("invalid_token")) {
+      return res.status(401).json({
+        message: "Invalid Google token",
+        status_code: 401,
+        error: true,
+      });
+    }
+
+    // General error handling (e.g., user creation failed)
+    return res.status(500).json({
+      message: error.message,
+      status_code: 500,
+      error: true,
+    });
   }
 };
 
