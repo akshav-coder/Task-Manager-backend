@@ -125,13 +125,12 @@ const googleAuthUser = async (req, res) => {
 
     if (user) {
       // If user exists, return the user with token (login)
-      return res.status(400).json({
-        message: "User registration failed",
-        status_code: 400,
-        error: true,
-        data: {
-          email: "User with this email already exists",
-        },
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        token: generateToken(user._id),
+        isLoggedIn: true,
       });
     } else {
       // If user does not exist, create a new user (register)
